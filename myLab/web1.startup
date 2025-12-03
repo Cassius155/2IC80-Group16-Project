@@ -1,0 +1,30 @@
+#!/bin/bash
+
+ip addr add 10.0.0.1/24 dev eth0
+apt-get update
+apt-get install -y nginx openssl
+
+# Create self-signed cert
+mkdir -p /etc/nginx/ssl
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout /etc/nginx/ssl/web.key \
+    -out /etc/nginx/ssl/web.crt \
+    -subj "/C=US/ST=None/L=None/O=Test/OU=Lab/CN=web1.mylab.test"
+
+# Configure HTTPS server
+cat >/etc/nginx/sites-available/default <<EOF
+server {
+    listen 443 ssl;
+    server_name web1.mylab.test;
+
+    ssl_certificate     /etc/nginx/ssl/web.crt;
+    ssl_certificate_key /etc/nginx/ssl/web.key;
+
+    root /var/www/html;
+    index index.html;
+}
+EOF
+
+echo "<h1>HTTPS is working!</h1>" > /var/www/html/index.html
+
+service nginx restart

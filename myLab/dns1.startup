@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+ip addr add 10.0.0.2/24 dev eth0
+apt-get update || true
+apt-get install -y bind9 dnsutils || true
+
+# Configure the zone
+cat >/etc/bind/named.conf.local <<EOF
+zone "mylab.test" {
+    type master;
+    file "/etc/bind/db.mylab.test";
+};
+EOF
+
+cat >/etc/bind/db.mylab.test <<EOF
+\$TTL    604800
+@       IN      SOA     dns1.mylab.test. root.mylab.test. (
+                          2         ; Serial
+                          604800    ; Refresh
+                          86400     ; Retry
+                          2419200   ; Expire
+                          604800 )  ; Negative Cache TTL
+;
+@       IN      NS      dns1.mylab.test.
+dns1    IN      A       10.0.0.2
+web1    IN      A       10.0.0.3
+EOF
+
+# Disable IPv6 so bind doesn't fail
+echo 'OPTIONS="-4"' >> /etc/default/named
+
+# Start bind9 manually (no systemd in Kathará)
+named -c /etc/bind/named.conf
