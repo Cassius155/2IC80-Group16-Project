@@ -2,14 +2,35 @@
 set -e
 
 ip addr add 10.0.0.2/24 dev eth0
-apt-get update || true
-apt-get install -y bind9 dnsutils || true
+ip link set eth0 up
+
+# Public DNS for apt-get access
+echo "nameserver 127.0.0.1" > /etc/resolv.conf
+
+apt-get update 
+apt-get install -y bind9 dnsutils
 
 # Configure the zone
 cat >/etc/bind/named.conf.local <<EOF
 zone "mylab.test" {
     type master;
     file "/etc/bind/db.mylab.test";
+};
+EOF
+
+cat >/etc/bind/named.conf.options <<EOF
+options {
+    directory "/var/cache/bind";
+
+    recursion yes;
+    allow-recursion { any; };
+
+    forwarders {
+        8.8.8.8;
+        1.1.1.1;
+    };
+    forward only;
+    dnssec-validation no;
 };
 EOF
 
@@ -24,7 +45,7 @@ cat >/etc/bind/db.mylab.test <<EOF
 ;
 @       IN      NS      dns1.mylab.test.
 dns1    IN      A       10.0.0.2
-web1    IN      A       10.0.0.3
+web1    IN      A       10.0.0.1
 EOF
 
 # Disable IPv6 so bind doesn't fail
