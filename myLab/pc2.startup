@@ -1,3 +1,16 @@
-#!/bin/bash
-echo "nameserver 10.0.0.2" > /etc/resolv.conf
+#!/bin/bash#!/bin/bash
+set -e
 ip addr add 10.0.0.4/24 dev eth0
+
+# Stop systemd-resolved so resolv.conf is ours
+systemctl stop systemd-resolved || true
+systemctl disable systemd-resolved || true
+
+rm -f /etc/resolv.conf
+echo "nameserver 10.0.0.2" > /etc/resolv.conf  # dns1 IP
+
+# Work around OpenSSL/CA empty-path bug for curl
+echo 'export SSL_CERT_FILE=/dev/null' >> /root/.bashrc
+echo 'export CURL_CA_BUNDLE=/dev/null' >> /root/.bashrc
+export SSL_CERT_FILE=/dev/null
+export CURL_CA_BUNDLE=/dev/null

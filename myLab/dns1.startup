@@ -24,7 +24,7 @@ cat >/etc/bind/db.mylab.test <<EOF
 ;
 @       IN      NS      dns1.mylab.test.
 dns1    IN      A       10.0.0.2
-web1    IN      A       10.0.0.3
+web1    IN      A       10.0.0.1
 EOF
 
 # Disable IPv6 so bind doesn't fail
