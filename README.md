@@ -60,7 +60,57 @@ Notes
 - In sniff-mode the tool inserts and later removes DROP rules on UDP/53 (FORWARD) to prevent the real DNS reply from winning the race.
 - Press Ctrl+C to clean up (ARP restore + iptables cleanup).
 - `web1` serves HTTPS only; `curl -k https://web1.mylab.test` to ignore the self-signed cert, or host separate HTTP content if needed.
+## SSL proxy 
 
+To support the SSL/HTTPS part of the MITM, we provide a simple lab HTTPS proxy in `attacker/ssl_proxy.py`.
+
+This component is **not** a full SSLStrip implementation. Instead, it:
+
+- Listens for **HTTP** traffic on the attacker (e.g., `10.0.0.3:8080`),
+- For each incoming request, forwards it as **HTTPS** to `web1.mylab.test:443`,
+- Relays the response back to the client as HTTP,
+- Logs security-relevant headers (e.g., `Cookie` and `Set-Cookie`) and drops `Strict-Transport-Security` for demonstration.
+
+In other words:
+
+> Victim → HTTP → attacker (`ssl_proxy.py`) → HTTPS → `web1.mylab.test`  
+> Attacker can see and log cookies and selected security headers in the middle.
+
+This is enough to demonstrate the SSL MITM concept in the lab and to reason about what information a man-in-the-middle can observe or modify.
+
+### SSL proxy setup 
+
+From the attacker container, install the Python dependency once:
+
+```bash
+# inside attacker
+pip3 install requests --break-system-packages
+```
+Then run the proxy:
+```bash
+# inside attacker, from the attacker/ directory where ssl_proxy.py lives
+python3 ssl_proxy.py \
+  --listen-port 8080 \
+  --upstream-host web1.mylab.test \
+  --upstream-port 443
+  ```
+You should see:
+```bash
+[+] Lab HTTPS proxy listening on 0.0.0.0:8080
+[+] Forwarding to https://web1.mylab.test:443
+[+] Press Ctrl+C to stop.
+```
+From the pc2 container:
+```bash
+apt-get update
+apt-get install -y curl
+
+# send HTTP to the proxy; the proxy will speak HTTPS to web1
+curl -v -x http://10.0.0.3:8080 http://web1.mylab.test/
+```
+The URL here is HTTP `http://web1.mylab.test/` because the proxy expects HTTP from the client and upgrades to HTTPS towards web1.
+
+If everything is set up correctly, pc2 should receive the same HTML content as a direct curl -k `https://web1.mylab.test/`
 ## Prerequisites (outside Kathara lab environment)
 If you plan to run the tools outside the provided Kathara lab, install the following on a Debian/Ubuntu host. The Kathara startup scripts already install these inside the lab, but outside the lab you'll need them manually.
 
