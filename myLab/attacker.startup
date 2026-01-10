@@ -18,10 +18,10 @@ echo "Internet connected"
 
 # install dependencies
 apt-get update
-apt-get install -y python3-scapy net-tools iproute2 build-essential python3-dev libnetfilter-queue-dev python3-pip
+apt-get install -y python3-scapy net-tools iproute2 python3-pip
 
-# install netfilterqueue via pip (might not be in apt)
-pip3 install NetfilterQueue --break-system-packages
+# install Python packages via pip
+pip3 install requests --break-system-packages
 
 # switch back to internal DNS for the lab environment
 echo "nameserver 10.0.0.2" > /etc/resolv.conf
