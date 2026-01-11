@@ -1,32 +1,92 @@
+#!/usr/bin/env python3
+
 from scapy.all import *
+import os
+import sys
 
-def detectMachines(startIP, endIP):
-    #Detects active machines in the network
-    activeIPs = []
-    for ip in range(startIP, endIP):
-        stringIP = "10.0.0." + str(ip)
-        packet = IP(dst=stringIP)/ICMP()
-        response = sr1(packet, timeout=1, verbose=0)
-        if response:
-            activeIPs.append(stringIP)
-    return activeIPs
+NETWORK = "10.0.0.0/24"
+TIMEOUT = 1
 
-def detectWebServers(activeIPs):
-    webServers = []
-    for ip in activeIPs:
-        try:
-            syn = IP(dst=ip)/TCP(dport=[80, 443], flags='S')
-        except socket.gaierror:
-            print(f"Could not resolve {ip}")
-            continue
-        responses, no_responses = sr(syn, timeout=2, retry=1, verbose=0)
-        for sent, received in responses:
-            if received.haslayer(TCP) and received.getlayer(TCP).flags == 0x12:
-                webServers.append(ip)
-        
-ips = detectMachines(1, 10)
-for ip in ips:
-    print(f"Active IP found: {ip}")
-webServers = detectWebServers(ips)
-for server in webServers:
-    print(f"Web server found at: {server}")
+# Common services to probe
+SERVICE_PORTS = {
+    21: "FTP",
+    22: "SSH",
+    25: "SMTP",
+    53: "DNS",
+    80: "HTTP",
+    443: "HTTPS",
+    3306: "MySQL",
+    8080: "HTTP-ALT"
+}
+
+
+def arp_scan(network):
+    print(f"[+] ARP scanning {network}")
+
+    pkt = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=network)
+    answered, _ = srp(pkt, timeout=2, verbose=False, iface="eth0")
+
+    hosts = []
+    for _, reply in answered:
+        hosts.append({
+            "ip": reply.psrc,
+            "mac": reply.hwsrc
+        })
+
+    return hosts
+
+
+def tcp_syn_scan(ip, port):
+    syn = IP(dst=ip) / TCP(dport=port, flags="S")
+    resp = sr1(syn, timeout=TIMEOUT, verbose=False)
+
+    if resp and resp.haslayer(TCP):
+        if resp[TCP].flags == 0x12:  # SYN-ACK
+            # Clean up
+            rst = IP(dst=ip) / TCP(dport=port, flags="R")
+            send(rst, verbose=False)
+            return True
+
+    return False
+
+
+def discover_services(hosts):
+    print("\n[+] Discovering services on detected hosts")
+
+    for host in hosts:
+        ip = host["ip"]
+        services = []
+
+        for port, name in SERVICE_PORTS.items():
+            if tcp_syn_scan(ip, port):
+                services.append(f"{name} ({port})")
+
+        host["services"] = services
+
+    return hosts
+
+
+def main():
+    if os.geteuid() != 0:
+        print("[-] Run this script as root.")
+        sys.exit(1)
+
+    hosts = arp_scan(NETWORK)
+    hosts = discover_services(hosts)
+
+    print("\n[+] Network service map:\n")
+
+    for host in hosts:
+        print(f"Host {host['ip']}  [{host['mac']}]")
+
+        if host["services"]:
+            for svc in host["services"]:
+                print(f"    - {svc}")
+        else:
+            print("    - No known services detected")
+
+        print()
+
+
+if __name__ == "__main__":
+    main()

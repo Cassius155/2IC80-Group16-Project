@@ -12,7 +12,7 @@ def tcp_scan(ip="10.0.0.1", ports=[443]):
 
     for sent, received in ans:
         if received[TCP].flags == "SA":
-            result.append(received[TCP].sport)
+            result.append(received[TCP])
 
     return result
 
