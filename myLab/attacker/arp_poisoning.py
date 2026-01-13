@@ -180,7 +180,7 @@ def cleanup_and_exit(signum, frame):
 signal.signal(signal.SIGINT, cleanup_and_exit)
 signal.signal(signal.SIGTERM, cleanup_and_exit)
 
-if __name__ == "__main__":
+def setupArpSpoof(target, gateway, dns_ip=None):
     parser = argparse.ArgumentParser(description="ARP Spoofing Tool")
     parser.add_argument("target", help="The IP address of the target victim")
     parser.add_argument("gateway", nargs="?", help="The IP address of the gateway (optional, auto-detected if omitted)")
@@ -188,9 +188,9 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    target_ip = args.target
-    gateway_ip = args.gateway
-    dns_ip = args.dns
+    target_ip = target
+    gateway_ip = gateway
+    dns_ip = dns_ip
     
     if not gateway_ip:
         print("Gateway IP not provided. Attempting to auto-detect...")
