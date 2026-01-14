@@ -1,0 +1,38 @@
+#!/bin/bash
+
+ip addr add 10.0.0.150/24 dev eth0
+
+ip link set eth0 up
+dhclient eth1 # configure external interface (bridged)
+
+# enable NAT/Routing
+echo 1 > /proc/sys/net/ipv4/ip_forward
+iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE
+
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+apt-get update
+apt-get install -y nginx openssl    
+
+# create self-signed cert
+mkdir -p /etc/nginx/ssl
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout /etc/nginx/ssl/web.key \
+    -out /etc/nginx/ssl/web.crt \
+    -subj "/C=US/ST=None/L=None/O=Test/OU=Lab/CN=web1.mylab.test"
+
+# configure HTTPS server
+cat >/etc/nginx/sites-available/default <<EOF
+server {
+    listen 443 ssl;
+    server_name web1.mylab.test;
+
+    ssl_certificate     /etc/nginx/ssl/web.crt;
+    ssl_certificate_key /etc/nginx/ssl/web.key;
+
+    root /var/www/html;
+    index index.html;
+}
+EOF
+
+
+service nginx restart
