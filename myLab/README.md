@@ -55,7 +55,7 @@ python3 exploit.py --auto-discover
 
 In manual mode, the `exploit.py` orchestrator requires `--dns` (upstream DNS server) so the DNS forwarder can handle non-target queries and preserve victim internet connectivity. Auto-discover mode selects the DNS server automatically.
 
-### Lab-Specific Command (required)
+### OPTIONAL: Lab-Specific Command (No Auto-Discovery)
 
 ```bash
 python3 exploit.py 10.0.0.4 10.0.0.1 \

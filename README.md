@@ -54,7 +54,7 @@ Optional:
 sudo python3 exploit.py --auto-discover --iface eth0
 ```
 
-### Full Attack Chain
+### OPTIONAL: If no automatic discovery is needed
 
 Run all three attack modules together (ARP + DNS + SSL Strip):
 
