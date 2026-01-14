@@ -10,7 +10,8 @@ Man-in-the-Middle attack toolkit implementing ARP poisoning, DNS forwarder with 
 
 - **ARP Poisoning**: Poisons ARP caches so victim routes traffic through attacker.
 - **DNS Spoofing**: Runs a local DNS server that spoofs target domain while forwarding all other queries to real DNS server (eliminates race conditions, allows victim to access non-target websites)
-- **SSL Stripping**: Transparent HTTPS→HTTP downgrade. Intercepts port 80 via iptables, proxies to HTTPS, rewrites responses to HTTP. Victim sees "Not Secure" warning.
+- **SSL Stripping**: Transparent HTTPS→HTTP downgrade. Intercepts port 80 via iptables, proxies to HTTPS, rewrites responses to HTTP, and logs credential submissions when present.
+- **Automatic Discovery**: Scans the local network, classifies hosts (gateway/DNS/web/victims), and provides interactive target + domain selection.
 
 ## Prerequisites
 
@@ -20,7 +21,7 @@ Man-in-the-Middle attack toolkit implementing ARP poisoning, DNS forwarder with 
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-pip python3-scapy net-tools iproute2 iptables
+sudo apt install -y python3 python3-pip python3-scapy python3-netifaces net-tools iproute2 iptables dnsutils openssl
 pip3 install requests --break-system-packages
 ```
 
@@ -38,6 +39,20 @@ sudo sysctl -p
 ```
 
 ## Quick Start
+
+### Automatic Discovery (Recommended)
+
+Runs network discovery and launches the full chain with interactive selection for victim and domain:
+
+```bash
+sudo python3 exploit.py --auto-discover
+```
+
+Optional:
+
+```bash
+sudo python3 exploit.py --auto-discover --iface eth0
+```
 
 ### Full Attack Chain
 
@@ -102,6 +117,7 @@ sudo python3 dns_spoofing.py \
 ```bash
 sudo python3 ssl_strip.py \
     --upstream-host <target_domain_no_dot> \
+    --upstream-ip <real_server_ip> \
     --target-ip <your_ip>
 ```
 
@@ -156,9 +172,18 @@ curl http://<target_domain>/  # Should work (normally refused)
 
 # 4. Check ARP table
 arp -a  # Gateway IP should show attacker's MAC
+
+# 5. Check credential capture logs (if a login form is present)
+cat /tmp/ssl_strip_credentials.log
 ```
 
 ## How It Works
+
+### 0. Network Discovery (Auto-Discover Mode)
+- ARP scan finds active hosts on the LAN
+- TCP SYN scan identifies key services (DNS/HTTP/HTTPS)
+- Hosts classified into gateway, DNS servers, web servers, victims
+- Domain detection uses reverse DNS (via the discovered DNS server) and HTTPS certificates
 
 ### 1. ARP Poisoning
 - Sends spoofed ARP replies to victim
@@ -196,6 +221,7 @@ Ports 5353 and 8080 are immediately reusable after cleanup.
 ## Files
 
 - `exploit.py` - Main orchestrator (runs all modules)
+- `discovery.py` - Network discovery and host classification
 - `arp_poisoning.py` - ARP cache poisoning
 - `dns_spoofing.py` - DNS forwarder (selective spoofing)
 - `ssl_strip.py` - SSL stripping (HTTPS→HTTP downgrade)

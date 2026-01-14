@@ -18,13 +18,18 @@ echo "Internet connected"
 
 # install dependencies
 apt-get update
-apt-get install -y python3-scapy net-tools iproute2 python3-pip
+apt-get install -y python3-scapy net-tools iproute2 python3-pip python3-netifaces
 
 # install Python packages via pip
-pip3 install requests --break-system-packages
+pip3 install requests netifaces --break-system-packages
 
 # switch back to internal DNS for the lab environment
 echo "nameserver 10.0.0.2" > /etc/resolv.conf
 
 chmod +x *.py
+
+echo "[+] Attacker machine ready"
+echo "[+] Network discovery module available"
+echo "[+] Run 'python3 exploit.py --auto-discover' for interactive mode"
+
 

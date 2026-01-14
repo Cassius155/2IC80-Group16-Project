@@ -5,12 +5,12 @@ ip link set eth0 up
 dhclient eth1 # configure external interface (bridged)
 
 # enable NAT/Routing
-echo 1 > /proc/sys/net/ipv4/ip_forward
+# Note: ip_forward is set via sysctl in lab.conf
 iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE
 
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 apt-get update
-apt-get install -y nginx openssl    
+apt-get install -y nginx openssl php-fpm php-cli php-common
 
 # create self-signed cert
 mkdir -p /etc/nginx/ssl
@@ -19,20 +19,61 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -out /etc/nginx/ssl/web.crt \
     -subj "/C=US/ST=None/L=None/O=Test/OU=Lab/CN=web1.mylab.test"
 
-# configure HTTPS server
+# configure HTTPS server with PHP support
 cat >/etc/nginx/sites-available/default <<EOF
 server {
-    listen 443 ssl;
-    server_name web1.mylab.test;
+    listen 443 ssl default_server;
+    server_name web1.mylab.test _;
 
     ssl_certificate     /etc/nginx/ssl/web.crt;
     ssl_certificate_key /etc/nginx/ssl/web.key;
 
     root /var/www/html;
-    index index.html;
+    index index.php index.html;
+
+    # PHP handling
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+        fastcgi_param HTTPS on;
+    }
+
+    # Prevent access to sensitive files
+    location ~ /\.ht {
+        deny all;
+    }
+
+    # Security headers (will be stripped by SSL stripper)
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+}
+
+# HTTP server - redirects all traffic to HTTPS (real-world secure behavior)
+# The SSL stripping attack will intercept these redirects
+server {
+    listen 80 default_server;
+    server_name web1.mylab.test _;
+
+    # Force HTTPS for all requests (prevents plaintext credential submission)
+    return 301 https://$host$request_uri;
 }
 EOF
 
-echo "<h1>HTTPS is working!</h1>" > /var/www/html/index.html
+# Set proper permissions
+chown -R www-data:www-data /var/www/html
+chmod -R 755 /var/www/html
 
+# Ensure log directory exists and is writable
+mkdir -p /tmp
+chmod 777 /tmp
+
+# Start PHP-FPM (php8.2-fpm is installed by default on Debian bookworm)
+service php8.2-fpm start
+
+# Start nginx
 service nginx restart
+
+echo "[+] Web server started with HTTPS on port 443 and HTTP on port 80"
+echo "[+] PHP-FPM enabled for dynamic content"
+echo "[+] Credential capture logs will be stored in /tmp/captured_credentials.log"

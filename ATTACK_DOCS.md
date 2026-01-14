@@ -10,6 +10,13 @@ Comprehensive notes on the MITM toolkit for the 2IC80 Project. Implements ARP po
 
 ## Modules
 
+### discovery.py
+Network reconnaissance and host classification.
+- ARP scan discovers active hosts on the LAN
+- TCP SYN scan identifies services (DNS/HTTP/HTTPS)
+- Classifies hosts into gateway, DNS servers, web servers, victims
+- Used by `exploit.py --auto-discover`
+
 ### arp_poisoning.py
 Maintains ARP poisoning loops.
 - `target`: Victim IP (e.g., 10.0.0.4)
@@ -34,16 +41,20 @@ Transparent HTTPS→HTTP downgrade attack. Uses iptables REDIRECT on port 80.
 - `--listen-host`: IP to bind (default `0.0.0.0`)
 - `--listen-port`: Port for intercepted traffic (default 8080)
 - `--upstream-host`: Upstream HTTPS server hostname (required, e.g., `web1.mylab.test`)
+- `--upstream-ip`: Upstream HTTPS server IP (bypasses DNS spoofing, recommended)
 - `--upstream-port`: Upstream HTTPS port (default 443)
 - `--no-iptables`: Skip automatic iptables REDIRECT rules
 - `--log-bodies`: Log truncated response bodies for debugging
 - `--timeout`: Upstream request timeout in seconds (default 10)
+- `--target-ip`: Only intercept traffic to this IP (prevents breaking other sites)
 
 **What it does:**
 - Intercepts HTTP port 80 via iptables REDIRECT
 - Proxies requests to HTTPS upstream
 - Rewrites HTTPS URLs in responses to HTTP
 - Strips HSTS, CSP, X-Frame-Options, Secure cookie flags
+- Intercepts HTTPS redirects and serves the HTTPS content over HTTP
+- Logs captured credentials to `/tmp/ssl_strip_credentials.log`
 - Victim sees "Not Secure" (HTTP) in browser address bar
 
 ### exploit.py
@@ -59,8 +70,15 @@ Orchestrator. Starts ARP poisoning, waits briefly, starts DNS forwarder, and SSL
 - `--delay`: Seconds to wait after ARP starts before DNS begins (default: 2.0)
 - `--no-ssl-strip`: Disable SSL stripping (run ARP + DNS only)
 - `--ssl-port`: SSL stripper port (default: 8080)
+- `--auto-discover`: Run network discovery and interactive target/domain selection
 
 ## Typical Workflows
+
+### Auto-Discovery (Interactive)
+
+```bash
+python3 exploit.py --auto-discover
+```
 
 ### Full MITM (Default: ARP + DNS + SSL Stripping)
 
@@ -102,7 +120,7 @@ python3 arp_poisoning.py 10.0.0.4 10.0.0.1 --dns 10.0.0.2
 python3 dns_spoofing.py --domain web1.mylab.test. --attacker-ip 10.0.0.3 --dns-server 10.0.0.2 --iface eth0
 
 # SSL strip only (requires prior ARP+DNS setup)
-python3 ssl_strip.py --upstream-host web1.mylab.test
+python3 ssl_strip.py --upstream-host web1.mylab.test --upstream-ip 10.0.0.1
 ```
 
 ## Verifying the Attack
@@ -118,6 +136,14 @@ curl http://web1.mylab.test/  # Should work (normally refused)
 
 # 3. Check browser address bar
 # Should show "Not Secure" (HTTP), not locked padlock (HTTPS)
+
+# 4. Check credential capture logs
+cat /tmp/ssl_strip_credentials.log
+
+# 5. Optional: submit a login via curl from the victim
+curl -i -X POST http://web1.mylab.test/login.php \
+  -d "username=alice&password=SuperSecret123" \
+  -H "Content-Type: application/x-www-form-urlencoded"
 ```
 
 ## DNS Forwarder Implementation
@@ -149,7 +175,7 @@ Port 8080 and 5353 immediately reusable on next run.
 ## Prerequisites
 
 - Run as root (raw sockets, iptables modification)
-- Packages: `scapy`, `requests` (SSL proxy/strip)
+- Packages: `scapy`, `requests`, `netifaces` (discovery), plus `dnsutils`/`openssl` for domain detection helpers
 - IP forwarding enabled (scripts attempt to enable automatically)
 - iptables and NAT table support (standard in Linux/Kathara)
 
