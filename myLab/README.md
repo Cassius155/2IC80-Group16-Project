@@ -121,6 +121,15 @@ curl google.com
 
 1. Visit `http://web1.mylab.test/` from the victim.
 2. Submit the login form.
+
+Example: submit a login via curl from the victim:
+
+```bash
+curl -i -X POST http://web1.mylab.test/login.php \
+    -d "username=alice&password=SuperSecret123" \
+    -H "Content-Type: application/x-www-form-urlencoded"
+```
+
 3. Check captures on web1:
 
 ```bash
@@ -132,14 +141,6 @@ cat /tmp/captured_credentials.log
 
 ```bash
 cat /tmp/ssl_strip_credentials.log
-```
-
-5. Optional: submit a login via curl from the victim:
-
-```bash
-curl -i -X POST http://web1.mylab.test/login.php \
-    -d "username=alice&password=SuperSecret123" \
-    -H "Content-Type: application/x-www-form-urlencoded"
 ```
 
 ### Check ARP Poisoning

@@ -172,8 +172,12 @@ curl http://<target_domain>/  # Should work (normally refused)
 
 # 4. Check ARP table
 arp -a  # Gateway IP should show attacker's MAC
+```
 
-# 5. Check credential capture logs (if a login form is present)
+From attacker machine:
+
+```bash
+# Check credential capture logs (if a login form is present)
 cat /tmp/ssl_strip_credentials.log
 ```
 

@@ -134,16 +134,17 @@ dig web1.mylab.test  # Should return 10.0.0.3 (attacker)
 # 2. Verify SSL stripping (with --ssl-strip enabled)
 curl http://web1.mylab.test/  # Should work (normally refused)
 
-# 3. Check browser address bar
-# Should show "Not Secure" (HTTP), not locked padlock (HTTPS)
-
-# 4. Check credential capture logs
-cat /tmp/ssl_strip_credentials.log
-
-# 5. Optional: submit a login via curl from the victim
+# 3. Optional: submit a login via curl from the victim
 curl -i -X POST http://web1.mylab.test/login.php \
   -d "username=alice&password=SuperSecret123" \
   -H "Content-Type: application/x-www-form-urlencoded"
+```
+
+From attacker machine:
+
+```bash
+# Check credential capture logs (if a login form is present)
+cat /tmp/ssl_strip_credentials.log
 ```
 
 ## DNS Forwarder Implementation
