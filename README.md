@@ -22,7 +22,7 @@ Man-in-the-Middle attack toolkit implementing ARP poisoning, DNS forwarder with 
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-pip python3-scapy python3-netifaces net-tools iproute2 iptables dnsutils openssl
-pip3 install requests --break-system-packages
+pip3 install requests netifaces --break-system-packages
 ```
 
 **Permissions:** Must run as root (raw sockets and iptables modification)
