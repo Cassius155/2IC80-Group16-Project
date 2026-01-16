@@ -53,8 +53,6 @@ cat >/etc/bind/db.mylab.test <<EOF
                           604800 )  ; Negative Cache TTL
 ;
 @       IN      NS      dns1.mylab.test.
-dns1    IN      A       10.0.0.2
-web1    IN      A       10.0.0.1
 EOF
 
 # disable IPv6 so bind doesn't fail
