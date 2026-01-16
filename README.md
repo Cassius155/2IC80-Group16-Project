@@ -4,6 +4,14 @@ Man-in-the-Middle attack toolkit implementing ARP poisoning, DNS forwarder with 
 
 **If you're using this in the Kathara lab environment we provide in the [myLab](myLab) folder, see [myLab/README.md](myLab/README.md) for lab-specific instructions.**
 
+**Using the labCreation.py helper:**
+
+ - **Purpose:** Quickly scaffold a Kathara-compatible lab environment with startup files, an attacker image, DNS and web server templates, and a generated `lab.conf`.
+ - **Run:** `python3 labCreation.py` (it prompts for environment name, number of machines, number of web servers, and a random seed).
+ - **Output:** A new folder named after the environment containing startup scripts (`*.startup`), an `attacker/` folder, generated web server folders, and a `lab.conf` you can use with Kathara.
+
+This helper is intended for local lab setup and complements the `myLab` examples.
+
 ---
 
 ## What It Does
