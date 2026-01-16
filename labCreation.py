@@ -44,8 +44,9 @@ def createAttacker(gateWay, dnsIp, dirPath = LABDIRECTORY):
         baseContent = f.readlines()
     
     #Modify base content with specific values
-    baseContent[5] = "ip route add default via 10.0.0." + str(gateWay) + "\n"
-    baseContent[25] = "echo "+ dnsIp +" > /etc/resolv.conf"
+    baseContent[5] = """echo "nameserver """ + dnsIp + """" > /etc/resolv.conf\n"""
+    baseContent[6] = "ip route add default via 10.0.0." + str(gateWay) + "\n"
+    baseContent[26] = """echo "nameserver """ + dnsIp + """" > /etc/resolv.conf\n"""
 
     #write to startup file
     filepath = dirPath + "/attacker.startup"

