@@ -237,6 +237,7 @@ Ports 5353 and 8080 are immediately reusable after cleanup.
 - `arp_poisoning.py` - ARP cache poisoning
 - `dns_spoofing.py` - DNS forwarder (selective spoofing)
 - `ssl_strip.py` - SSL stripping (HTTPS→HTTP downgrade)
+- `labCreation.py` - Helper script to create custom Kathara lab environments
 - `ATTACK_DOCS.md` - Comprehensive technical documentation
 
 ## Documentation
